@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#344e41"><meta name="description" content="根据附件军训注意事项整理的手机练习：点击选项，自动判分，统计正确率，复习错题。">
+<title>军训练习 · 随手刷题</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23344e41'/%3E%3Cpath d='M17 33l10 10 21-24' fill='none' stroke='%23fff' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="./styles.css">
+<script src="./questions.js" defer></script><script src="./app.js" defer></script>
+</head>
+<body>
+<div class="app-shell">
+<header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">✓</span><div><span class="brand-name">军训练习</span><span class="brand-tag">每天一点，记得更牢</span></div></div><div class="header-actions"><button id="restart" class="ghost-button" type="button">重新开始</button></div></header>
+<section class="hero"><div><p class="eyebrow">2026 · 军事理论题库</p><h1>点一下，<br>把知识记下来。</h1><p class="hero-subtitle">不用打字。选答案、看解析，把错题再练一遍。</p></div><div class="hero-icon" aria-hidden="true"><span>✓</span><small>READY TO LEARN</small></div></section>
+<div class="source-note"><span aria-hidden="true">▤</span><p id="source-note">题目加载中…</p></div>
+<p class="storage-warning" id="storage-warning" role="status" hidden>浏览器未允许保存记录，本次仍可答题，关闭后进度可能丢失。</p>
+<section class="stats-grid" aria-label="答题统计">
+<div class="stat"><span class="stat-label">本轮已答</span><strong id="stat-progress" class="stat-value">0 / 500</strong><span class="stat-sub">已提交的题目</span></div>
+<div class="stat"><span class="stat-label">本轮答对</span><strong id="stat-correct" class="stat-value">0</strong><span class="stat-sub">每题同等分值</span></div>
+<div class="stat"><span class="stat-label">本轮正确率</span><strong id="stat-rate" class="stat-value">—</strong><span class="stat-sub">答对 ÷ 已提交</span></div>
+<div class="stat"><span class="stat-label">待复习错题</span><strong id="stat-wrong" class="stat-value">0</strong><span class="stat-sub">重新答对后移出</span></div>
+</section>
+<main class="workspace">
+<section class="quiz-panel" aria-label="答题区">
+<div class="quiz-toolbar"><div class="mode-tabs" role="group" aria-label="练习方式"><button id="mode-ordered" class="tab active" type="button">顺序练习</button><button id="mode-random" class="tab" type="button">随机练习</button><button id="mode-wrong" class="tab" type="button">错题复习 <span id="mode-wrong-count">0</span></button></div><button id="show-result" class="ghost-button" type="button">本轮成绩</button></div>
+<details class="scope-box" id="scope-box"><summary>章节与题型筛选 <span>点击展开</span></summary><div class="scope-controls"><div class="scope-field"><label for="scope-category">选择章节</label><select id="scope-category"><option value="all">全部章节</option></select></div><div class="scope-field"><label for="scope-type">选择题型</label><select id="scope-type"><option value="all">全部题型</option><option value="single">单选题</option><option value="multiple">多选题</option><option value="boolean">判断题</option></select></div><button id="scope-apply" class="secondary-button" type="button">应用范围，开始练习</button></div></details><p id="scope-status" class="question-tip"></p><div id="question-view">
+<div class="question-meta"><span id="type-tag" class="type-tag">单选题</span><span id="question-number" class="question-number">01 / 500</span></div>
+<div class="progress-track" role="progressbar" id="round-progress" aria-label="本轮答题进度" aria-valuemin="0"><div class="progress-fill" id="progress-fill"></div></div>
+<article class="question-card"><p id="question-category" class="question-category"></p><h2 id="question-title" tabindex="-1"></h2><p id="question-tip" class="question-tip"></p><div id="options" class="options" role="group" aria-labelledby="question-title"></div><div id="feedback" class="feedback" role="status" aria-live="polite" hidden></div></article>
+<div class="quiz-actions"><button id="prev" class="secondary-button" type="button">上一题</button><button id="submit" class="primary-button" type="button" hidden>提交答案</button><button id="next" class="primary-button" type="button">下一题 →</button></div>
+</div>
+<section id="result-view" class="result-card" aria-label="本轮成绩" hidden><p class="eyebrow" id="result-label">本轮成绩</p><h2 id="result-title" tabindex="-1">继续一点点进步</h2><strong id="result-score" class="result-score"></strong><p id="result-detail" class="result-detail"></p><div class="quiz-actions"><button id="back-question" class="secondary-button" type="button">回到题目</button><button id="result-wrong" class="primary-button" type="button">复习错题</button></div><p class="question-tip" id="overall-detail"></p></section>
+<section id="empty-view" class="empty-state" hidden><span aria-hidden="true">✓</span><h2>当前范围没有待复习错题</h2><p>答错的题会自动收进这里。重新答对，就会移出错题本。</p><button id="empty-start" class="primary-button" type="button">开始顺序练习</button></section>
+<noscript><p>请启用浏览器 JavaScript 后使用点选答题。</p></noscript>
+</section>
+<aside class="navigator-panel"><div class="panel-heading"><h2>答题卡</h2><span id="navigator-count"></span></div><div id="question-grid" class="question-grid" aria-label="跳转题目"></div><div class="legend"><span><i class="legend-empty"></i>未答</span><span><i class="legend-correct"></i>答对</span><span><i class="legend-wrong"></i>答错</span></div><div class="wrong-card"><span class="wrong-count" id="aside-wrong">0 道待复习</span><h3>让错题变成会的题。</h3><p>每次提交自动记录，不用手动整理。</p><button id="aside-review" class="review-button" type="button">打开错题本 →</button></div><p class="question-tip">进度自动保存在此浏览器。换手机或清除浏览器数据后不会同步。</p></aside>
+</main>
+<footer class="page-footer"><p>题目、选项与标准答案来自《中南大学2026本科新生军训军事理论题库》</p><p>仅按附件标准答案判分 · 188 单选 / 142 多选 / 170 判断</p></footer>
+</div>
+<dialog id="confirm-dialog" class="modal" aria-labelledby="confirm-title" aria-describedby="confirm-detail"><form method="dialog" class="modal-content"><h2 id="confirm-title">开始新一轮练习？</h2><p id="confirm-detail">本轮答案会重新计分，错题本与累计统计会保留。</p><div class="quiz-actions"><button value="cancel" class="secondary-button">取消</button><button value="confirm" class="primary-button">开始新一轮</button></div></form></dialog>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
