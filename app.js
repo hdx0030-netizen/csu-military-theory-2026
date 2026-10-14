@@ -139,7 +139,7 @@
     '.history-list{list-style:none;padding:0;margin:0;max-height:300px;overflow:auto}' +
     '.history-list li{display:flex;justify-content:space-between;gap:14px;padding:12px 0;border-top:1px solid var(--line);font-size:12px}' +
     '.history-list li span{color:var(--ink-soft)}.history-list li strong{white-space:nowrap;color:var(--green)}' +
-    '@media(max-width:520px){.exam-history{padding:18px 14px;border-radius:18px}.exam-history h2{font-size:18px}.header-actions{max-width:48%;gap:0}.topbar{gap:6px}.stat-value{white-space:nowrap}}';
+    '@media(max-width:520px){.exam-history{padding:18px 14px;border-radius:18px}.exam-history h2{font-size:18px}.header-actions{max-width:48%;gap:0}.topbar{gap:6px}#stat-progress{white-space:nowrap;font-size:clamp(12px,3.7vw,18px)}}';
   document.head.append(historyStyle);
   historyButton.addEventListener('click', () => {
     historyPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
