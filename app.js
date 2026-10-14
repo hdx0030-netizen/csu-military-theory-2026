@@ -1,7 +1,11 @@
 (() => {
   'use strict';
   const BANK = window.QUESTION_BANK;
-  const KEY = 'csu-military-theory-2026-500-v1';
+  const LEGACY_KEY = 'csu-military-theory-2026-500-v1';
+  const KEY = 'csu-military-theory-2026-500-v2';
+  let roundSequence = 0;
+  const newRoundId = () => window.crypto?.randomUUID?.() ||
+    'round-' + Date.now().toString(36) + '-' + (++roundSequence) + '-' + Math.random().toString(36).slice(2);
   const EXAM_SIZE = 100;
   const MODES = ['ordered', 'random', 'wrong', 'exam'];
   const $ = id => document.getElementById(id);
@@ -26,7 +30,7 @@
   const isExam = session => session.mode === 'exam';
   const examSubmitted = session => isExam(session) && Number.isFinite(session.submittedAt) && session.submittedAt > 0;
   const summarize = session => {
-    const answered = session.ids.filter(id => session.answers[id]?.selected.length > 0).length;
+    const answered = session.ids.filter(id => session.answers[id]?.selected?.length > 0).length;
     const completed = examSubmitted(session);
     const graded = session.ids.map(id => session.answers[id]).filter(a => a?.graded);
     const correct = isExam(session) && !completed ? 0 : graded.filter(a => a.correct).length;
@@ -51,7 +55,7 @@
     const scope = normalizeScope(mode === 'exam' ? {} : inputScope);
     const pool = filteredIds(scope);
     return {
-      mode, scope,
+      id: newRoundId(), mode, scope,
       ids: mode === 'exam' ? shuffle(allIds).slice(0, EXAM_SIZE) :
         mode === 'wrong' ? pool.filter(id => wrong[id]) : mode === 'random' ? shuffle(pool) : pool,
       cursor: 0, answers: {}, startedAt: Date.now(), submittedAt: null
@@ -77,7 +81,7 @@
   examButton.disabled = allIds.length < EXAM_SIZE;
   document.querySelector('.mode-tabs').append(examButton);
   const examNotice = makeText('p', 'exam-notice',
-    '从完整题库随机抽取100道不重复题目。每题1分，满分100分，交卷后统一判分；未答计0分。');
+    '从完整题库随机抽取100道不重复题目。每题1分，满分100分，交卷后统一判分；未答计0分。练习与考试进度分别保存，切换后可继续。');
   examNotice.id = 'exam-notice';
   examNotice.hidden = true;
   $('scope-box').before(examNotice);
@@ -91,41 +95,142 @@
   const subs = document.querySelectorAll('.stats-grid .stat-sub');
   const confirmButton = $('confirm-dialog').querySelector('[value="confirm"]');
   const cancelButton = $('confirm-dialog').querySelector('[value="cancel"]');
-  const freshState = () => ({
-    schema: 1, bankVersion: BANK.version, wrong: {},
-    overall: { submitted: 0, correct: 0 }, session: makeSession('ordered')
+  const historyButton = makeText('button', 'ghost-button', '成绩记录');
+  historyButton.id = 'open-exam-history';
+  historyButton.type = 'button';
+  document.querySelector('.header-actions').append(historyButton);
+  const historyPanel = makeText('section', 'exam-history', '');
+  historyPanel.id = 'exam-history';
+  historyPanel.setAttribute('aria-label', '模拟考试成绩记录');
+  const historyTitle = makeText('h2', '', '模拟考试成绩');
+  historyTitle.id = 'exam-history-title';
+  historyTitle.tabIndex = -1;
+  const historySummary = makeText('p', 'question-tip', '');
+  const historyEmpty = makeText('p', 'history-empty',
+    '还没有已交卷的模拟考试。每次交卷后，成绩会自动记录在这里。');
+  const historyChart = makeText('div', 'history-chart-scroll', '');
+  historyChart.id = 'exam-history-chart';
+  historyChart.tabIndex = 0;
+  historyChart.setAttribute('aria-label', '成绩折线图，可左右滑动查看全部考试');
+  const historyPoint = makeText('p', 'history-point-detail', '');
+  historyPoint.id = 'exam-history-point';
+  historyPoint.setAttribute('role', 'status');
+  historyPoint.setAttribute('aria-live', 'polite');
+  const historyDetails = makeText('details', 'history-details', '');
+  const historyDetailsTitle = makeText('summary', '', '');
+  const historyList = makeText('ol', 'history-list', '');
+  historyList.id = 'exam-history-list';
+  historyDetails.append(historyDetailsTitle, historyList);
+  historyPanel.append(historyTitle, historySummary, historyEmpty, historyChart, historyPoint,
+    historyDetails, makeText('p', 'question-tip', '成绩与学习进度保存在当前浏览器，换设备或清除浏览器数据后不会同步。'));
+  document.querySelector('.workspace').after(historyPanel);
+  const historyStyle = document.createElement('style');
+  historyStyle.textContent =
+    '.header-actions{flex-wrap:wrap;justify-content:flex-end;gap:4px}' +
+    '.exam-history{min-width:0;margin-top:22px;padding:24px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);scroll-margin-top:16px}' +
+    '.exam-history h2{margin:0 0 8px;font-size:21px}.exam-history h2:focus{outline:none}' +
+    '.history-empty{margin:20px 0;color:var(--ink-soft);font-size:13px}' +
+    '.history-chart-scroll{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;border-radius:12px;background:#fafbf7;border:1px solid var(--line)}' +
+    '.history-chart-scroll svg{display:block;max-width:none;height:245px;font-family:inherit}' +
+    '.history-chart-scroll .history-point{cursor:pointer;fill:var(--green);stroke:white;stroke-width:3}' +
+    '.history-chart-scroll .history-point:focus{outline:none;stroke:var(--orange);stroke-width:5}' +
+    '.history-point-detail{padding:10px 12px;background:var(--green-soft);border-radius:8px;color:var(--green);font-size:12px}' +
+    '.history-details summary{cursor:pointer;color:var(--green);font-size:13px;min-height:44px;display:flex;align-items:center}' +
+    '.history-list{list-style:none;padding:0;margin:0;max-height:300px;overflow:auto}' +
+    '.history-list li{display:flex;justify-content:space-between;gap:14px;padding:12px 0;border-top:1px solid var(--line);font-size:12px}' +
+    '.history-list li span{color:var(--ink-soft)}.history-list li strong{white-space:nowrap;color:var(--green)}' +
+    '@media(max-width:520px){.exam-history{padding:18px 14px;border-radius:18px}.exam-history h2{font-size:18px}.header-actions{max-width:48%;gap:0}.topbar{gap:6px}.stat-value{white-space:nowrap}}';
+  document.head.append(historyStyle);
+  historyButton.addEventListener('click', () => {
+    historyPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    historyTitle.focus({ preventScroll: true });
   });
+  const withActiveSession = data => Object.defineProperty(data, 'session', {
+    enumerable: false,
+    get() { return this.sessions[this.activeMode]; },
+    set(session) {
+      if (session.mode !== this.activeMode) throw new Error('会话模式不匹配');
+      this.sessions[this.activeMode] = session;
+    }
+  });
+  const freshState = () => withActiveSession({
+    schema: 2, bankVersion: BANK.version, wrong: {},
+    overall: { submitted: 0, correct: 0 },
+    activeMode: 'ordered', sessions: { ordered: makeSession('ordered') }, examHistory: []
+  });
+  const cleanSession = s => {
+    if (!s || !MODES.includes(s.mode) || !Array.isArray(s.ids)) return null;
+    const scope = normalizeScope(isExam(s) ? {} : s.scope);
+    const scopeIds = filteredIds(scope);
+    if (s.ids.some(id => !questions.has(id) || !scopeIds.includes(id)) ||
+        new Set(s.ids).size !== s.ids.length ||
+        (isExam(s) ? s.ids.length !== EXAM_SIZE : s.mode !== 'wrong' && s.ids.length !== scopeIds.length)) return null;
+    const startedAt = Number.isFinite(s.startedAt) && s.startedAt > 0 ? s.startedAt : Date.now();
+    const submittedAt = examSubmitted(s) ? s.submittedAt : null;
+    const clean = {
+      id: typeof s.id === 'string' && s.id.length > 0 && s.id.length < 256 ? s.id :
+        'legacy-' + s.mode + '-' + startedAt + '-' + (submittedAt || 'pending'),
+      mode: s.mode, scope, ids: [...s.ids], submittedAt, startedAt,
+      cursor: Math.min(Math.max(Number.isInteger(s.cursor) ? s.cursor : 0, 0), Math.max(s.ids.length - 1, 0)),
+      answers: {}
+    };
+    for (const id of s.ids) {
+      const a = s.answers?.[id];
+      const q = questions.get(id);
+      let selected = a && Array.isArray(a.selected) &&
+        a.selected.every(o => q.options.some(x => x.id === o)) ? [...new Set(a.selected)] : [];
+      if (q.type !== 'multiple' && selected.length > 1) selected = [];
+      if (!isExam(s) && !a) continue;
+      const graded = isExam(s) ? submittedAt !== null : a?.graded === true && selected.length > 0;
+      clean.answers[id] = { selected, graded, correct: graded && grade(q, selected) };
+    }
+    return clean;
+  };
+  const cleanHistory = history => {
+    const seen = new Set();
+    return (Array.isArray(history) ? history : []).filter(r => {
+      if (!r || typeof r.id !== 'string' || !r.id || r.id.length >= 256 || seen.has(r.id) ||
+          r.total !== EXAM_SIZE || !Number.isInteger(r.score) || r.score < 0 || r.score > EXAM_SIZE ||
+          !Number.isInteger(r.answered) || r.answered < r.score || r.answered > EXAM_SIZE ||
+          !Number.isFinite(r.submittedAt) || r.submittedAt <= 0) return false;
+      seen.add(r.id);
+      return true;
+    }).map(r => ({
+      id: r.id, submittedAt: r.submittedAt,
+      startedAt: Number.isFinite(r.startedAt) && r.startedAt > 0 ? r.startedAt : r.submittedAt,
+      score: r.score, total: EXAM_SIZE, answered: r.answered,
+      unanswered: EXAM_SIZE - r.answered
+    })).sort((a, b) => a.submittedAt - b.submittedAt);
+  };
+  const recordExam = (data, session) => {
+    if (!session || !examSubmitted(session) || data.examHistory.some(r => r.id === session.id)) return;
+    const stats = summarize(session);
+    data.examHistory.push({
+      id: session.id, startedAt: session.startedAt, submittedAt: session.submittedAt,
+      score: stats.correct, total: EXAM_SIZE, answered: stats.answered, unanswered: stats.unanswered
+    });
+    data.examHistory.sort((a, b) => a.submittedAt - b.submittedAt);
+  };
   let storageAvailable = true;
   const loadState = () => {
     try {
-      const raw = localStorage.getItem(KEY);
+      const raw = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY);
       if (!raw) return freshState();
       const saved = JSON.parse(raw);
-      if (saved.schema !== 1 || saved.bankVersion !== BANK.version || !saved.session) return freshState();
-      const s = saved.session;
-      const scope = normalizeScope(isExam(s) ? {} : s.scope);
-      const scopeIds = filteredIds(scope);
-      if (!MODES.includes(s.mode) || !Array.isArray(s.ids) ||
-          s.ids.some(id => !questions.has(id) || !scopeIds.includes(id)) ||
-          new Set(s.ids).size !== s.ids.length ||
-          (isExam(s) ? s.ids.length !== EXAM_SIZE :
-            s.mode !== 'wrong' && s.ids.length !== scopeIds.length)) return freshState();
+      if (![1, 2].includes(saved.schema) || saved.bankVersion !== BANK.version) return freshState();
       const clean = freshState();
-      const submittedAt = examSubmitted(s) ? s.submittedAt : null;
-      clean.session = {
-        ...makeSession(s.mode, {}, scope), ids: s.ids, submittedAt,
-        cursor: Math.min(Math.max(Number.isInteger(s.cursor) ? s.cursor : 0, 0), Math.max(s.ids.length - 1, 0)),
-        answers: {}, startedAt: Number.isFinite(s.startedAt) ? s.startedAt : Date.now()
-      };
-      for (const id of s.ids) {
-        const a = s.answers?.[id];
-        const q = questions.get(id);
-        let selected = a && Array.isArray(a.selected) &&
-          a.selected.every(o => q.options.some(x => x.id === o)) ? [...new Set(a.selected)] : [];
-        if (q.type !== 'multiple' && selected.length > 1) selected = [];
-        if (!isExam(s) && !a) continue;
-        const graded = isExam(s) ? submittedAt !== null : a.graded === true && selected.length > 0;
-        clean.session.answers[id] = { selected, graded, correct: graded && grade(q, selected) };
+      if (saved.schema === 1) {
+        const session = cleanSession(saved.session);
+        if (session) {
+          clean.sessions[session.mode] = session;
+          clean.activeMode = session.mode;
+        }
+      } else {
+        for (const mode of MODES) {
+          const session = cleanSession(saved.sessions?.[mode]);
+          if (session?.mode === mode) clean.sessions[mode] = session;
+        }
+        if (MODES.includes(saved.activeMode) && clean.sessions[saved.activeMode]) clean.activeMode = saved.activeMode;
       }
       for (const id of allIds) {
         if (saved.wrong?.[id]) clean.wrong[id] = {
@@ -137,6 +242,9 @@
         submitted,
         correct: Math.min(submitted, Math.max(0, Math.floor(Number(saved.overall?.correct) || 0)))
       };
+      clean.examHistory = cleanHistory(saved.examHistory);
+      // Import the most recent previously submitted exam without counting its wrong answers again.
+      recordExam(clean, clean.sessions.exam);
       return clean;
     } catch (error) {
       if (error.name !== 'SyntaxError') storageAvailable = false;
@@ -193,6 +301,7 @@
       syncWrong(id, correct);
     }
     state.session.submittedAt = Date.now();
+    recordExam(state, state.session);
     view = 'result';
     save();
     render();
@@ -237,7 +346,7 @@
     $('scope-box').hidden = exam;
     $('exam-notice').hidden = !exam;
     $('scope-status').textContent = exam ?
-      (completed ? '模拟考试已交卷 · 可查看试卷与解析' : '模拟考试进行中 · 100道随机题 · 交卷前可修改答案') :
+      (completed ? '模拟考试已交卷 · 成绩已记录 · 练习进度已保留' : '模拟考试进行中 · 交卷前可修改答案 · 切换练习会保留本场考试') :
       '当前范围：' + (s.scope.category === 'all' ? '全部章节' : s.scope.category) + ' · ' +
       (s.scope.type === 'all' ? '全部题型' : typeNames[s.scope.type]) + ' · ' + stats.total + ' 题';
     $('stat-progress').textContent = progress + ' / ' + stats.total;
@@ -361,8 +470,86 @@
       '累计练习提交 ' + state.overall.submitted + ' 次，答对 ' + state.overall.correct +
       ' 次。重复练习按每次提交统计；未答不计入练习正确率。';
   };
+  let historyRenderKey = null;
+  const formatExamDate = time => new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+  }).format(time);
+  const renderHistory = () => {
+    const records = state.examHistory;
+    const key = records.map(r => r.id + ':' + r.score).join('|');
+    if (key === historyRenderKey) return;
+    historyRenderKey = key;
+    historyEmpty.hidden = records.length > 0;
+    historyChart.hidden = !records.length;
+    historyPoint.hidden = !records.length;
+    historyDetails.hidden = !records.length;
+    historyChart.replaceChildren();
+    historyList.replaceChildren();
+    if (!records.length) {
+      historySummary.textContent = '每次交卷后自动记录 · 每场满分100分';
+      historyPoint.textContent = '';
+      return;
+    }
+    const latest = records[records.length - 1];
+    const average = records.reduce((sum, r) => sum + r.score, 0) / records.length;
+    historySummary.textContent = '已考 ' + records.length + ' 次 · 最近 ' + latest.score +
+      ' 分 · 最高 ' + Math.max(...records.map(r => r.score)) + ' 分 · 平均 ' + average.toFixed(1) + ' 分';
+    const describe = index => {
+      const r = records[index];
+      historyPoint.textContent = '第 ' + (index + 1) + ' 次 · ' + formatExamDate(r.submittedAt) +
+        ' · ' + r.score + ' / 100分 · 未答 ' + r.unanswered + ' 题';
+    };
+    describe(records.length - 1);
+    const ns = 'http://www.w3.org/2000/svg';
+    const svgNode = (tag, attributes, text) => {
+      const el = document.createElementNS(ns, tag);
+      for (const [name, value] of Object.entries(attributes || {})) el.setAttribute(name, value);
+      if (text !== undefined) el.textContent = text;
+      return el;
+    };
+    const width = Math.max(historyChart.clientWidth || 480, (records.length - 1) * 56 + 90);
+    const svg = svgNode('svg', { width, height: 245, viewBox: '0 0 ' + width + ' 245',
+      role: 'group', 'aria-label': '成绩折线图：纵轴0到100分，横轴为考试次序。点击数据点查看考试记录。' });
+    const left = 45, right = width - 25, top = 24, bottom = 202;
+    for (const score of [0, 25, 50, 75, 100]) {
+      const y = bottom - score / 100 * (bottom - top);
+      svg.append(svgNode('line', { x1: left, x2: right, y1: y, y2: y, stroke: '#e3e6dc' }),
+        svgNode('text', { x: left - 9, y: y + 4, 'text-anchor': 'end', fill: '#697064', 'font-size': 11 }, score));
+    }
+    svg.append(svgNode('text', { x: left, y: 14, fill: '#697064', 'font-size': 10 }, '分数'));
+    const points = records.map((r, i) => ({
+      x: records.length === 1 ? (left + right) / 2 : left + i / (records.length - 1) * (right - left),
+      y: bottom - r.score / 100 * (bottom - top)
+    }));
+    svg.append(svgNode('polyline', { points: points.map(p => p.x + ',' + p.y).join(' '),
+      fill: 'none', stroke: '#38583f', 'stroke-width': 3, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    records.forEach((r, i) => {
+      const point = points[i];
+      const dot = svgNode('circle', { cx: point.x, cy: point.y, r: 7, class: 'history-point',
+        tabindex: 0, role: 'button', 'aria-label': '第' + (i + 1) + '次考试，' + r.score + '分，' + formatExamDate(r.submittedAt) });
+      dot.append(svgNode('title', {}, '第' + (i + 1) + '次 · ' + formatExamDate(r.submittedAt) + ' · ' + r.score + '分'));
+      dot.addEventListener('click', () => describe(i));
+      dot.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); describe(i); }
+      });
+      svg.append(dot, svgNode('text', { x: point.x, y: Math.max(17, point.y - 12),
+        'text-anchor': 'middle', fill: '#38583f', 'font-size': 11, 'font-weight': 700 }, r.score),
+      svgNode('text', { x: point.x, y: 225, 'text-anchor': 'middle', fill: '#697064', 'font-size': 11 }, '第' + (i + 1) + '次'));
+    });
+    historyChart.append(svg);
+    historyDetailsTitle.textContent = '查看全部 ' + records.length + ' 次考试成绩 ▾';
+    for (let i = records.length - 1; i >= 0; i--) {
+      const r = records[i];
+      const row = makeText('li', '', '');
+      row.append(makeText('span', '', '第 ' + (i + 1) + ' 次 · ' + formatExamDate(r.submittedAt) + ' · 未答 ' + r.unanswered + ' 题'),
+        makeText('strong', '', r.score + ' / 100分'));
+      historyList.append(row);
+    }
+  };
+  window.addEventListener?.('resize', () => { historyRenderKey = null; renderHistory(); });
   const render = () => {
     renderStats();
+    renderHistory();
     const empty = !state.session.ids.length;
     if (isExam(state.session) && !examSubmitted(state.session)) view = 'question';
     $('empty-view').hidden = !empty;
@@ -384,31 +571,51 @@
     $('scope-category').value = state.session.scope.category;
     $('scope-type').value = state.session.scope.type;
   };
-  const startRound = (mode, scope = state.session.scope) => {
-    if (mode === 'exam' && allIds.length < EXAM_SIZE) return;
-    state.session = makeSession(mode, state.wrong, scope);
+  const showSession = () => {
     $('scope-box').open = false;
     setScopeChoices();
-    view = 'question';
+    view = examSubmitted(state.session) ? 'result' : 'question';
     save();
     render();
-    focusTitle();
+    if (state.session.ids.length) {
+      if (view === 'result') $('result-title').focus();
+      else focusTitle();
+    }
+  };
+  const startRound = (mode, scope = state.session.scope) => {
+    if (mode === 'exam' && allIds.length < EXAM_SIZE) return;
+    state.activeMode = mode;
+    state.session = makeSession(mode, state.wrong, scope);
+    showSession();
   };
   const requestRound = (mode, force = false, scope = state.session.scope) => {
-    if (!force && mode === state.session.mode && view === 'question') return;
-    const examInProgress = isExam(state.session) && !examSubmitted(state.session);
-    const stats = summarize(state.session);
-    const hasSelections = Object.values(state.session.answers).some(a => a.selected.length);
-    const resetPractice = hasSelections && stats.submitted < stats.total;
-    if (examInProgress || resetPractice || mode === 'exam') {
-      const title = mode === 'exam' ? (isExam(state.session) ? '重新抽取100题？' : '开始模拟考试？') :
-        (examInProgress ? '离开未交卷的考试？' : '切换并开始新一轮？');
-      const detail = examInProgress ?
-        '本场考试尚未交卷。继续后会重置当前试卷和已选答案，错题本与累计练习统计会保留。' :
-        mode === 'exam' ? '从完整500题中随机抽取100题，每题1分。交卷后统一判分，当前练习进度会重置，错题本会保留。' :
-          '本轮答题进度将重置。错题本与累计练习统计会保留。';
-      confirmAction({ kind: 'start-round', mode, scope }, title, detail,
-        mode === 'exam' ? '开始考试' : '开始新一轮');
+    if (!force && state.sessions[mode]) {
+      if (mode === 'wrong') {
+        const session = state.sessions.wrong;
+        const existing = new Set(session.ids);
+        for (const id of filteredIds(session.scope)) {
+          if (state.wrong[id] && !existing.has(id)) session.ids.push(id);
+        }
+      }
+      state.activeMode = mode;
+      showSession();
+      return;
+    }
+    if (mode === 'exam') {
+      const previous = state.sessions.exam;
+      confirmAction({ kind: 'start-round', mode, scope: {} },
+        previous ? '重新抽取100题？' : '开始模拟考试？',
+        previous && !examSubmitted(previous) ?
+          '当前未交卷试卷和已选答案会重置。各练习模式进度、错题本和历次考试成绩会保留。' :
+          '从完整500题中随机抽取100题，每题1分。各练习模式进度会保留，交卷后自动保存成绩。',
+        '开始考试');
+      return;
+    }
+    const previous = state.sessions[mode];
+    if (force && previous && Object.values(previous.answers).some(a => a.selected.length)) {
+      confirmAction({ kind: 'start-round', mode, scope }, '重新开始本模式练习？',
+        '只重置这个练习模式的本轮进度。其他模式、考试进度、错题本和历次考试成绩会保留。',
+        '开始新一轮');
     } else startRound(mode, scope);
   };
   $('confirm-dialog').addEventListener('close', () => {
