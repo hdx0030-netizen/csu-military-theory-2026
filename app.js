@@ -153,6 +153,37 @@
       this.sessions[this.activeMode] = session;
     }
   });
+  const resetNames = { ordered: '顺序练习', random: '随机练习', wrong: '错题复习',
+    exam: '模拟考试试卷', 'all-practice': '全部刷题模式' };
+  const resetField = makeText('div', 'scope-field reset-target-field', '');
+  resetField.hidden = true;
+  const resetLabel = makeText('label', '', '选择要重置的进度');
+  resetLabel.htmlFor = 'reset-target';
+  const resetTarget = document.createElement('select');
+  resetTarget.id = 'reset-target';
+  for (const [value, text] of Object.entries({
+    ordered: '顺序练习', random: '随机练习', wrong: '错题复习',
+    exam: '模拟考试试卷 · 重新抽取100题', 'all-practice': '全部刷题模式 · 不含模拟考试'
+  })) {
+    const option = makeText('option', '', text);
+    option.value = value;
+    resetTarget.append(option);
+  }
+  resetField.append(resetLabel, resetTarget);
+  $('confirm-detail').after(resetField);
+  const modeSaveNote = makeText('p', 'question-tip', '各模式进度分别保存，切换后继续上次题目。需要重新开始时，点击“重置进度”。');
+  $('scope-status').before(modeSaveNote);
+  const resetStyle = document.createElement('style');
+  resetStyle.textContent = '.reset-target-field{margin:14px 0 20px}.reset-target-field select{font-size:14px;min-height:48px}.header-actions button{white-space:nowrap}';
+  document.head.append(resetStyle);
+  const resetDetail = target => target === 'all-practice' ?
+    '顺序练习、随机练习和错题复习将从第1题开始，已选答案会清空，各自的章节与题型范围会保留。模拟考试进度、错题本、累计练习统计和考试成绩记录均保留。' :
+    target === 'exam' ?
+      '仅重新抽取当前模拟试卷的100题，考试中已选答案会清空。三个刷题模式的进度、错题本、累计练习统计和历次考试成绩均保留。' :
+      '仅重置“' + resetNames[target] + '”的本轮进度：从第1题开始，清空已选答案，保留章节与题型范围。其他模式进度、错题本、累计练习统计和考试成绩记录均保留。';
+  resetTarget.addEventListener('change', () => {
+    if (pending?.kind === 'reset-progress') $('confirm-detail').textContent = resetDetail(resetTarget.value);
+  });
   const freshState = () => withActiveSession({
     schema: 2, bankVersion: BANK.version, wrong: {},
     overall: { submitted: 0, correct: 0 },
@@ -309,6 +340,7 @@
   };
   const confirmAction = (action, title, detail, confirmText, cancelText = '取消') => {
     pending = action;
+    resetField.hidden = action.kind !== 'reset-progress';
     $('confirm-title').textContent = title;
     $('confirm-detail').textContent = detail;
     confirmButton.textContent = confirmText;
@@ -359,7 +391,7 @@
     $('round-progress').setAttribute('aria-valuemax', stats.total);
     $('round-progress').setAttribute('aria-valuenow', progress);
     $('show-result').textContent = exam ? (completed ? '考试成绩' : '交卷') : '本轮成绩';
-    $('restart').textContent = exam ? '重新考试' : '重新开始';
+    $('restart').textContent = '重置进度';
     $('result-view').classList.toggle('exam-result', exam);
     $('back-question').textContent = exam ? '查看试卷' : '回到题目';
     for (const mode of MODES) {
@@ -588,8 +620,8 @@
     state.session = makeSession(mode, state.wrong, scope);
     showSession();
   };
-  const requestRound = (mode, force = false, scope = state.session.scope) => {
-    if (!force && state.sessions[mode]) {
+  const requestRound = (mode, scope = state.session.scope) => {
+    if (state.sessions[mode]) {
       if (mode === 'wrong') {
         const session = state.sessions.wrong;
         const existing = new Set(session.ids);
@@ -602,27 +634,36 @@
       return;
     }
     if (mode === 'exam') {
-      const previous = state.sessions.exam;
-      confirmAction({ kind: 'start-round', mode, scope: {} },
-        previous ? '重新抽取100题？' : '开始模拟考试？',
-        previous && !examSubmitted(previous) ?
-          '当前未交卷试卷和已选答案会重置。各练习模式进度、错题本和历次考试成绩会保留。' :
-          '从完整500题中随机抽取100题，每题1分。各练习模式进度会保留，交卷后自动保存成绩。',
+      confirmAction({ kind: 'start-round', mode, scope: {} }, '开始模拟考试？',
+        '从完整500题中随机抽取100题，每题1分。各刷题模式进度会保留，交卷后自动保存成绩。',
         '开始考试');
-      return;
-    }
-    const previous = state.sessions[mode];
-    if (force && previous && Object.values(previous.answers).some(a => a.selected.length)) {
-      confirmAction({ kind: 'start-round', mode, scope }, '重新开始本模式练习？',
-        '只重置这个练习模式的本轮进度。其他模式、考试进度、错题本和历次考试成绩会保留。',
-        '开始新一轮');
     } else startRound(mode, scope);
+  };
+  let resetToastTimer;
+  const resetProgress = target => {
+    if (!Object.prototype.hasOwnProperty.call(resetNames, target)) return;
+    const targets = target === 'all-practice' ? ['ordered', 'random', 'wrong'] : [target];
+    for (const mode of targets) {
+      const scope = state.sessions[mode]?.scope || { category: 'all', type: 'all' };
+      state.sessions[mode] = makeSession(mode, state.wrong, scope);
+    }
+    if (targets.includes(state.activeMode)) showSession();
+    else { save(); render(); }
+    $('toast').textContent = '已重置' + resetNames[target] + '进度，其他记录已保留。';
+    $('toast').hidden = false;
+    window.clearTimeout?.(resetToastTimer);
+    resetToastTimer = window.setTimeout?.(() => { $('toast').hidden = true; }, 4000);
+  };
+  const requestReset = () => {
+    resetTarget.value = state.activeMode;
+    confirmAction({ kind: 'reset-progress' }, '自主重置进度', resetDetail(resetTarget.value), '确认重置');
   };
   $('confirm-dialog').addEventListener('close', () => {
     const action = pending;
     pending = null;
     if ($('confirm-dialog').returnValue === 'confirm' && action) {
       if (action.kind === 'finish-exam') finishExam();
+      else if (action.kind === 'reset-progress') resetProgress(resetTarget.value);
       else startRound(action.mode, action.scope);
     }
     setScopeChoices();
@@ -645,21 +686,29 @@
   });
   $('back-question').addEventListener('click', () => { view = 'question'; render(); focusTitle(); });
   for (const mode of MODES) $('mode-' + mode).addEventListener('click', () => requestRound(
-    mode, false, mode === 'wrong' ? { category: 'all', type: 'all' } : state.session.scope
+    mode, mode === 'wrong' ? { category: 'all', type: 'all' } : state.session.scope
   ));
   for (const id of ['aside-review', 'result-wrong']) $(id).addEventListener('click', () =>
-    requestRound('wrong', true, { category: 'all', type: 'all' }));
+    requestRound('wrong', { category: 'all', type: 'all' }));
   $('empty-start').addEventListener('click', () => requestRound('ordered'));
-  $('restart').addEventListener('click', () => requestRound(state.session.mode, true));
+  $('restart').addEventListener('click', requestReset);
   for (const category of categories) {
     const option = document.createElement('option');
     option.value = category;
     option.textContent = category;
     $('scope-category').append(option);
   }
-  $('scope-apply').addEventListener('click', () => requestRound(state.session.mode, true, {
-    category: $('scope-category').value, type: $('scope-type').value
-  }));
+  $('scope-apply').addEventListener('click', () => {
+    if (isExam(state.session)) return;
+    const scope = normalizeScope({ category: $('scope-category').value, type: $('scope-type').value });
+    if (scope.category === state.session.scope.category && scope.type === state.session.scope.type) {
+      showSession();
+      return;
+    }
+    confirmAction({ kind: 'start-round', mode: state.activeMode, scope }, '应用新范围并从第1题开始？',
+      '仅当前模式会按新范围开始练习，其他模式进度、考试进度和成绩记录会保留。',
+      '应用新范围');
+  });
   setScopeChoices();
   const counts = { single: 0, multiple: 0, boolean: 0 };
   for (const q of questions.values()) counts[q.type]++;
